@@ -5,7 +5,6 @@ use IEEE.STD_LOGIC_UNSIGNED.ALL;
 
 entity video_vga is
 	Port ( clk : in STD_LOGIC;
-			res : in std_logic;
 			shor : out STD_LOGIC;
 			sver : out STD_LOGIC;
 			RGB : out STD_LOGIC_VECTOR(7 downto 0);
