@@ -32,7 +32,12 @@ architecture arq_video_vga of video_vga is
 	--signal vstart: std_logic_vector(9 downto 0) := "0011010010"; 
 	signal vstart1: std_logic_vector(9 downto 0) := "0011010010";--Señal de posición vertical de la barra 1
 	signal vstart2: std_logic_vector(9 downto 0) := "0011010010";--Señal de posición vertical de la barra 2
-
+	
+	signal pelotav: std_logic_vector(9 downto 0) := "0011110000";
+	signal pelotah: std_logic_vector(9 downto 0) := "0111100000";
+	signal dirh: std_logic:= '0';
+	signal dirv: std_logic:= '0';
+	
 	begin
 	
 		--clk es de 50MHz del reloj interno de la FPGA. Se genera la señal clkdiv a 25 MHz.
@@ -160,6 +165,49 @@ architecture arq_video_vga of video_vga is
 			end if;
 		end process;
 		
+		--Movimiento de pelota
+		process(clkdiv2)
+		begin
+			if(clkdiv2 = '1' and clkdiv2' event) then
+				
+				if((pelotah + 10 + hbp) > (545 + hbp)) then
+					
+					if(((pelotav > vstart2) and (pelotav < vstart2 + 60))) then
+						
+						dirh <= '1';
+						
+					else
+						pelotav <= "0011110000";
+						pelotah <= "0111100000";
+					end if;
+				
+				elsif((pelotah + hbp) < (95 + hbp)) then
+					
+					if(((pelotav > vstart1) and (pelotav < vstart1 + 60))) then
+						
+						dirh <= '0';
+					else
+						pelotav <= "0011110000";
+						pelotah <= "0111100000";
+					end if;
+				end if;	
+				
+--				if((pelotah = 630 + hbp) or (pelotah = 0 + hbp)) then
+--					pelotav <= "0011110000";
+--					pelotah <= "0111100000";
+--				end if;
+				
+				--Mueve dependiendo de la bandera de direccion
+				if(dirh = '0')then
+					pelotah <= pelotah + 1;
+				else
+					pelotah <= pelotah - 1;
+				end if;
+				
+			end if;
+		end process;
+		
+		
 
 	--***********************
 		--Pixels a visualizar				Posiciones horizontales								Posiciones verticales
@@ -167,6 +215,7 @@ architecture arq_video_vga of video_vga is
 			else "11111111" when(conh > (545 + hbp) and conh < (560 + hbp) and conv > (vstart2 + vbp) and conv < ((vstart2 + 60) + vbp) and vidon = '1') 
 			else "11111111" when(conh > (318 + hbp) and conh < (320 + hbp) and conv > ("0000101000" + vbp) and conv < (480 + vbp) and vidon = '1')
 			else "11111111" when(conh > (hbp) and conh < (600 + hbp) and conv > ("0000101000" + vbp) and conv < ("0000101010" + vbp) and vidon = '1')
+			else "11111111" when (conh > (pelotah + hbp) and conh < (pelotah + 10 + hbp) and conv > (pelotav + vbp) and conv < (pelotav + 10 + vbp) and vidon = '1') 
 			else "00000000";
 	--***********************
 
