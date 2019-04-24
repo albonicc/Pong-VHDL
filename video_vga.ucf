@@ -12,7 +12,9 @@ NET "clk" LOC = B8 | IOSTANDARD = LVCMOS33;
 #Terminales de salida de señales de sincronía horizontal y vertical
 NET "shor" LOC = T4 | IOSTANDARD = LVTTL | DRIVE = 8;
 NET "sver" LOC = U3 | IOSTANDARD = LVTTL | DRIVE = 8;
-#Terminal de entrada para selección de patron a desplegar
-NET "a[0]" LOC = R17;
-NET "a[1]" LOC = N17;
+#Entradas de control con botones
+NET "up1" LOC = H13;
+NET "up2" LOC = D18;
+NET "down1" LOC = E18;
+NET "down2" LOC = B18;
 NET "go" LOC = G18;
