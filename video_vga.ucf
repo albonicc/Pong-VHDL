@@ -7,11 +7,12 @@ NET "RGB[4]" LOC = N8 | IOSTANDARD = LVTTL | DRIVE = 8;
 NET "RGB[5]" LOC = R8 | IOSTANDARD = LVTTL | DRIVE = 8;
 NET "RGB[6]" LOC = T8 | IOSTANDARD = LVTTL | DRIVE = 8;
 NET "RGB[7]" LOC = R9 | IOSTANDARD = LVTTL | DRIVE = 8;
-#Terminal de señal de reloj de 50MHZ.
+#Terminal de seÃ±al de reloj de 50MHZ.
 NET "clk" LOC = B8 | IOSTANDARD = LVCMOS33;
-#Terminales de salida de señales de sincronía horizontal y vertical
+#Terminales de salida de seÃ±ales de sincronÃ­a horizontal y vertical
 NET "shor" LOC = T4 | IOSTANDARD = LVTTL | DRIVE = 8;
 NET "sver" LOC = U3 | IOSTANDARD = LVTTL | DRIVE = 8;
-#Terminal de entrada para selección de patron a desplegar
+#Terminal de entrada para selecciÃ³n de patron a desplegar
 NET "a[0]" LOC = R17;
 NET "a[1]" LOC = N17;
+NET "go" LOC = G18;
