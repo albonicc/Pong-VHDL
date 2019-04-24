@@ -11,36 +11,39 @@ entity video_vga is
 			up1: in std_logic; --Entradas de control
 		   up2: in std_logic;
 			down1: in std_logic; 
-			down2: in std_logic);
+			down2: in std_logic;
+			go: in std_logic);
 end video_vga;
 
 architecture arq_video_vga of video_vga is
-	constant hpixels : std_logic_vector(9 downto 0) := "1100100000"; --Valor de pixeles en lÃ­nea horizontal (800)
+	constant hpixels : std_logic_vector(9 downto 0) := "1100100000"; --Valor de pixeles en línea horizontal (800)
 	constant vlines : std_logic_vector(9 downto 0) := "1000001001"; --Valor de lineas horizontales en pantalla (521)
-	constant hbp : std_logic_vector(9 downto 0) := "0010010000"; --LÃ­mite horizontal inferior "back porch" (144)
-	constant hfp : std_logic_vector(9 downto 0) := "1100100000"; --LÃ­mite horizontal superior "front porch" (784)
-	constant vbp : std_logic_vector(9 downto 0) := "0000011111"; --LÃ­mite vertical inferior "back porch" (31)
-	constant vfp : std_logic_vector(9 downto 0) := "0111111111"; --LÃ­mite vertical superior "front porch" (521)
+	constant hbp : std_logic_vector(9 downto 0) := "0010010000"; --Límite horizontal inferior "back porch" (144)
+	constant hfp : std_logic_vector(9 downto 0) := "1100100000"; --Límite horizontal superior "front porch" (784)
+	constant vbp : std_logic_vector(9 downto 0) := "0000011111"; --Límite vertical inferior "back porch" (31)
+	constant vfp : std_logic_vector(9 downto 0) := "0111111111"; --Límite vertical superior "front porch" (521)
 
 	signal conh : std_logic_vector(9 downto 0) := (others=>'0'); --Contador horizontal
 	signal conv : std_logic_vector(9 downto 0) := (others=>'0'); --Contador vertical
-	signal clkdiv : std_logic := '0';--SeÃ±al de reloj a 25Mhz
-	signal vidon : std_logic := '0';--Habilita la seÃ±al de video
+	signal clkdiv : std_logic := '0';--Señal de reloj a 25Mhz
+	signal vidon : std_logic := '0';--Habilita la señal de video
 	signal vsenable : std_logic := '0';--Habilita el contador vertical
-	signal clkdiv2 : std_logic := '0'; --SeÃ±al de reloj dividida a 60 Hz
+	signal clkdiv2 : std_logic := '0'; --Señal de reloj dividida a 60 Hz
 	signal counter : integer range 0 to 104165 := 0; --Contador para dividir el clk de 50Mhz a 60Hz
 	--signal vstart: std_logic_vector(9 downto 0) := "0011010010"; 
-	signal vstart1: std_logic_vector(9 downto 0) := "0011010010";--SeÃ±al de posiciÃ³n vertical de la barra 1
-	signal vstart2: std_logic_vector(9 downto 0) := "0011010010";--SeÃ±al de posiciÃ³n vertical de la barra 2
+	signal vstart1: std_logic_vector(9 downto 0) := "0011010010";--Señal de posición vertical de la barra 1
+	signal vstart2: std_logic_vector(9 downto 0) := "0011010010";--Señal de posición vertical de la barra 2
 	
 	signal pelotav: std_logic_vector(9 downto 0) := "0011110000";
-	signal pelotah: std_logic_vector(9 downto 0) := "0111100000";
+	signal pelotah: std_logic_vector(9 downto 0) := "0101000000";
 	signal dirh: std_logic:= '0';
 	signal dirv: std_logic:= '0';
-	
+	signal go2: std_logic:= '0';
+	signal espera: integer range 0 to 1000 := 0;
+
 	begin
 	
-		--clk es de 50MHz del reloj interno de la FPGA. Se genera la seÃ±al clkdiv a 25 MHz.
+		--clk es de 50MHz del reloj interno de la FPGA. Se genera la señal clkdiv a 25 MHz.
 		process (clk)
 		begin
 			if (clk = '1' and clk' event) then
@@ -48,11 +51,11 @@ architecture arq_video_vga of video_vga is
 			end if;
 		end process;
 		
-		--clk es de 50MHz. Se genera otra seÃ±al a 60 Hz.
+		--clk es de 50MHz. Se genera otra señal a 60 Hz.
 		process (clk)
 		begin
 			if (clk = '1' and clk' event) then
-				if(counter = 104165) then --Cuando el contador llega a la cuenta maxima (mitad del periodo de seÃ±al a 60Hz)
+				if(counter = 104165) then --Cuando el contador llega a la cuenta maxima (mitad del periodo de señal a 60Hz)
 					clkdiv2 <= not clkdiv2; --clkdiv2 se invierte
 					counter <= 0; --Contador regresa a 0
 				else
@@ -65,7 +68,7 @@ architecture arq_video_vga of video_vga is
 		process (clkdiv)
 		begin
 			if (clkdiv = '1' and clkdiv' event) then
-				if conh = hpixels then --Monitoreo de nÃºmero de pixeles en lÃ­nea horizontal
+				if conh = hpixels then --Monitoreo de número de pixeles en línea horizontal
 					conh <= (others=>'0'); --Inicializa en 0's el contador
 					vsenable <= '1'; --Habilita el contador veritical cuando conh = 800.
 				else
@@ -75,21 +78,21 @@ architecture arq_video_vga of video_vga is
 			end if;
 		end process;
 
-		--Pulso de sincronÃ­a horizontal
-		shor <= '1' when conh(9 downto 7) = "000" else '0'; --Las seÃ±ales de sincronizaciÃ³n se habilitan en '0'
+		--Pulso de sincronía horizontal
+		shor <= '1' when conh(9 downto 7) = "000" else '0'; --Las señales de sincronización se habilitan en '0'
 
 		--Contador vertical
 		process (clkdiv)
 		begin
 			if (clkdiv = '1' and clkdiv' event and vsenable = '1') then
-				if conv = vlines then --Monitorea el nÃºmero de lÃ­neas verticales
+				if conv = vlines then --Monitorea el número de líneas verticales
 					conv <= (others=>'0'); --Inicializa el contador 
 				else conv <= conv + 1; --Incrementa el contador vertical
 				end if;
 			end if;
 		end process;
 		
-		--Pulso de sincronÃ­a vertical
+		--Pulso de sincronía vertical
 		sver <= '1' when conv(9 downto 1) = "000000000" else '0';
 		
 	--PRUEBAS (NO SIRVE)
@@ -170,25 +173,27 @@ architecture arq_video_vga of video_vga is
 		begin
 			if(clkdiv2 = '1' and clkdiv2' event) then
 				
-				if((pelotah + 10 + hbp) > (545 + hbp)) then
+				if((pelotah + 10 + hbp) = (545 + hbp)) then
 					
 					if(((pelotav > vstart2) and (pelotav < vstart2 + 60))) then
 						
 						dirh <= '1';
 						
 					else
-						pelotav <= "0011110000";
-						pelotah <= "0111100000";
+						go2 <= '0';
+						--pelotav <= "0011110000";
+						--pelotah <= "0111100000";
 					end if;
 				
-				elsif((pelotah + hbp) < (95 + hbp)) then
+				elsif((pelotah + hbp) = (95 + hbp)) then
 					
 					if(((pelotav > vstart1) and (pelotav < vstart1 + 60))) then
 						
 						dirh <= '0';
 					else
-						pelotav <= "0011110000";
-						pelotah <= "0111100000";
+						go2 <= '0';
+						--pelotav <= "0011110000";
+						--pelotah <= "0111100000";
 					end if;
 				end if;	
 				
@@ -198,18 +203,28 @@ architecture arq_video_vga of video_vga is
 --				end if;
 				
 				--Mueve dependiendo de la bandera de direccion
-				if(dirh = '0')then
-					pelotah <= pelotah + 1;
+				if(go='1' or go2='1') then
+					if(dirh = '0')then
+						pelotah <= pelotah + 1;
+					else
+						pelotah <= pelotah - 1;
+					end if;
 				else
-					pelotah <= pelotah - 1;
+					pelotav <= "0011110000";
+					pelotah <= "0101000000";
+					espera <= espera + 1;
+					if (espera = 500) then go2 <= '1';
+													espera <= 0;
+					end if;
 				end if;
+				
 				
 			end if;
 		end process;
 		
 		
 
-	--***********************
+	--*********
 		--Pixels a visualizar				Posiciones horizontales								Posiciones verticales
 		RGB <= "11111111" when (conh > (80 + hbp) and conh < (95 + hbp) and conv > (vstart1 + vbp) and conv < ((vstart1 + 60) + vbp) and vidon = '1') 
 			else "11111111" when(conh > (545 + hbp) and conh < (560 + hbp) and conv > (vstart2 + vbp) and conv < ((vstart2 + 60) + vbp) and vidon = '1') 
@@ -217,8 +232,8 @@ architecture arq_video_vga of video_vga is
 			else "11111111" when(conh > (hbp) and conh < (600 + hbp) and conv > ("0000101000" + vbp) and conv < ("0000101010" + vbp) and vidon = '1')
 			else "11111111" when (conh > (pelotah + hbp) and conh < (pelotah + 10 + hbp) and conv > (pelotav + vbp) and conv < (pelotav + 10 + vbp) and vidon = '1') 
 			else "00000000";
-	--***********************
+	--*********
 
- --HabilitaciÃ³n de la seÃ±al de video solo en los mÃ¡rgenes de visualizaciÃ³n (480 x 640)
+ --Habilitación de la señal de video solo en los márgenes de visualización (480 x 640)
  vidon <= '1' when (((conh < hbp and (conh < hfp )) or ((conv > vbp) and (conv < vfp)))) else '0';
 end arq_video_vga;
