@@ -2,35 +2,102 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.STD_LOGIC_ARITH.ALL;
 use IEEE.STD_LOGIC_UNSIGNED.ALL;
+use work.CAPSRNGConfiguration.ALL;
 
 entity video_vga is
 	Port ( clk : in STD_LOGIC;
-			a : in STD_LOGIC_VECTOR(1 downto 0);
 			shor : out STD_LOGIC;
 			sver : out STD_LOGIC;
-			RGB : out STD_LOGIC_VECTOR(7 downto 0));
+			RGB : out STD_LOGIC_VECTOR(7 downto 0);
+			up1: in std_logic; --Entradas de control
+		   up2: in std_logic;
+			down1: in std_logic; 
+			down2: in std_logic;
+			go: in std_logic);
 end video_vga;
 
-architecture arq_video_vga of video_vga is
-	constant hpixels : std_logic_vector(9 downto 0) := "1100100000"; --Valor de pixeles en lÌnea horizontal (800)
+architecture arq_video_vga of video_vga is 
+	component CA2DPRNG is
+	generic ( -- The initial state, a.k.a. the seed, for the CA grid as defined
+						INI_STATE: CA_GRID := INITIAL_STATE;
+				-- The transition rule for each cell in the CA grid is obtained from the package
+						CELLs_TRANSITION: TRANSITION_GRID:= TRANSITION_RULES
+			);
+	port ( CLK : in STD_LOGIC;
+		 Reset : in STD_LOGIC;
+		 Enable : in STD_LOGIC;
+		 -- The random bits in a row-wise fashion: (X_SIZE-1, Y_SIZE-1) ---> (0,0);
+		 RandomNumber : out STD_LOGIC_VECTOR (X_SIZE*Y_SIZE -1 downto 0)
+			);
+	end component;
+
+	constant hpixels : std_logic_vector(9 downto 0) := "1100100000"; --Valor de pixeles en l√≠nea horizontal (800)
 	constant vlines : std_logic_vector(9 downto 0) := "1000001001"; --Valor de lineas horizontales en pantalla (521)
-	constant hbp : std_logic_vector(9 downto 0) := "0010010000"; --LÌmite horizontal inferior "back porch" (144)
-	constant hfp : std_logic_vector(9 downto 0) := "1100100000"; --LÌmite horizontal superior "front porch" (784)
-	constant vbp : std_logic_vector(9 downto 0) := "0000011111"; --LÌmite vertical inferior "back porch" (31)
-	constant vfp : std_logic_vector(9 downto 0) := "0111111111"; --LÌmite vertical superior "front porch" (521)
+	constant hbp : std_logic_vector(9 downto 0) := "0010010000"; --L√≠mite horizontal inferior "back porch" (144)
+	constant hfp : std_logic_vector(9 downto 0) := "1100100000"; --L√≠mite horizontal superior "front porch" (784)
+	constant vbp : std_logic_vector(9 downto 0) := "0000011111"; --L√≠mite vertical inferior "back porch" (31)
+	constant vfp : std_logic_vector(9 downto 0) := "0111111111"; --L√≠mite vertical superior "front porch" (521)
 
 	signal conh : std_logic_vector(9 downto 0) := (others=>'0'); --Contador horizontal
 	signal conv : std_logic_vector(9 downto 0) := (others=>'0'); --Contador vertical
-	signal clkdiv : std_logic := '0';--SeÒal de reloj a 25Mhz
-	signal vidon : std_logic := '0';--Habilita la seÒal de video
+	signal clkdiv : std_logic := '0';--Se√±al de reloj a 25Mhz
+	signal vidon : std_logic := '0';--Habilita la se√±al de video
 	signal vsenable : std_logic := '0';--Habilita el contador vertical
-
+	signal clkdiv2 : std_logic := '0'; --Se√±al de reloj dividida a 60 Hz
+	signal clkdiv3 : std_logic := '0'; --Se√±al 
+	signal counter : integer range 0 to 104165 := 0; --Contador para dividir el clk de 50Mhz a 60Hz
+	signal counter2 : integer range 0 to 104165 := 0; 
+	--signal vstart: std_logic_vector(9 downto 0) := "0011010010"; 
+	signal vstart1: std_logic_vector(9 downto 0) := "0011010010";--Se√±al de posici√≥n vertical de la barra 1
+	signal vstart2: std_logic_vector(9 downto 0) := "0011010010";--Se√±al de posici√≥n vertical de la barra 2
+	
+	signal pelotav: std_logic_vector(9 downto 0) := "0011110000";
+	signal pelotah: std_logic_vector(9 downto 0) := "0101000000";
+	signal dirh: std_logic:= '0';
+	signal dirv: std_logic:= '0';
+	signal go2: std_logic:= '0';
+	signal espera: integer range 0 to 1000 := 0;
+	signal RandomNum: std_logic_vector(X_SIZE*Y_SIZE -1 downto 0);
+	signal sumv: std_logic_vector(1 downto 0);
+	signal marcador1: integer range 0 to 9 := 0;
+	signal marcador2: integer range 0 to 9 := 0;
+	signal espacio1: integer range 0 to 100 :=0;
+	signal espacio2: integer range 0 to 100 :=0;
+	signal winflag1: std_logic := '0';
+	signal winflag2: std_logic := '0';
+	
 	begin
-		--clk es de 50MHz del reloj interno de la FPGA. Se genera la seÒal clkdiv a 25 MHz.
+	
+		--clk es de 50MHz del reloj interno de la FPGA. Se genera la se√±al clkdiv a 25 MHz.
 		process (clk)
 		begin
 			if (clk = '1' and clk' event) then
 				clkdiv <= not clkdiv;
+			end if;
+		end process;
+		
+		--clk es de 50MHz. Se genera otra se√±al a 60 Hz.
+		process (clk)
+		begin
+			if (clk = '1' and clk' event) then
+				if(counter = 50000) then --Cuando el contador llega a la cuenta maxima (mitad del periodo de se√±al a 60Hz)
+					clkdiv2 <= not clkdiv2; --clkdiv2 se invierte
+					counter <= 0; --Contador regresa a 0
+				else
+					counter <= counter + 1; --Contador se incrementa
+				end if;
+			end if;
+		end process;
+		
+		process (clk)
+		begin
+			if (clk = '1' and clk' event) then
+				if(counter2 = 100000) then --Cuando el contador llega a la cuenta maxima (mitad del periodo de se√±al a 60Hz)
+					clkdiv3 <= not clkdiv3; --clkdiv3 se invierte
+					counter2 <= 0; --Contador regresa a 0
+				else
+					counter2 <= counter2 + 1; --Contador se incrementa
+				end if;
 			end if;
 		end process;
 
@@ -38,7 +105,7 @@ architecture arq_video_vga of video_vga is
 		process (clkdiv)
 		begin
 			if (clkdiv = '1' and clkdiv' event) then
-				if conh = hpixels then --Monitoreo de n˙mero de pixeles en lÌnea horizontal
+				if conh = hpixels then --Monitoreo de n√∫mero de pixeles en l√≠nea horizontal
 					conh <= (others=>'0'); --Inicializa en 0's el contador
 					vsenable <= '1'; --Habilita el contador veritical cuando conh = 800.
 				else
@@ -48,37 +115,224 @@ architecture arq_video_vga of video_vga is
 			end if;
 		end process;
 
-		--Pulso de sincronÌa horizontal
-		shor <= '1' when conh(9 downto 7) = "000" else '0'; --Las seÒales de sincronizaciÛn se habilitan en '0'
+		--Pulso de sincron√≠a horizontal
+		shor <= '1' when conh(9 downto 7) = "000" else '0'; --Las se√±ales de sincronizaci√≥n se habilitan en '0'
 
 		--Contador vertical
 		process (clkdiv)
 		begin
 			if (clkdiv = '1' and clkdiv' event and vsenable = '1') then
-				if conv = vlines then --Monitorea el n˙mero de lÌneas verticales
+				if conv = vlines then --Monitorea el n√∫mero de l√≠neas verticales
 					conv <= (others=>'0'); --Inicializa el contador 
 				else conv <= conv + 1; --Incrementa el contador vertical
 				end if;
 			end if;
 		end process;
-
-		--Pulso de sincronÌa vertical
+		
+		--Pulso de sincron√≠a vertical
 		sver <= '1' when conv(9 downto 1) = "000000000" else '0';
-
-	--***********************
-		--Pixels a visualizar
-		RGB <= "11111100" when (conh(5 downto 0) = "000000" and conv(4 downto 0) = "00000" and vidon = '1' and a = "00") 
-		else
-			-- Cuadro a visualizar
-			"11100011" when (conh > ("0100001110" + hbp) and conh < ("0101110010" + hbp) and conv > ("0010111110" + vbp) and conv < ("0100100010" + vbp) and vidon = '1' and a = "01") 
-			else
-				-- Rayas verticales
-				"00011111" when (conh (5 downto 0) = "000000" and vidon = '1' and a = "10" )
+		
+	--PRUEBAS (NO SIRVE)
+--		process(clkdiv)
+--		begin
+--			if (clkdiv = '1' and clkdiv' event) then
+--				if(starth = "111111111" and rlimit = "1111111111" and startv = "1111111111" and dlimit = "1111111111") then
+--					starth <= (others=>'0');
+--					rlimit <= (others=>'0');
+--					startv <= (others=>'0');
+--					dlimit <= (others=>'0');
+--				else
+--					starth <= starth + '1';
+--					rlimit <= rlimit + '1';
+--					startv <= startv + '1';
+--					dlimit <= dlimit + '1';
+--				end if;
+--			end if;
+--		end process;
+		
+--		process(clkdiv2)
+--		begin
+--			if(clkdiv2 = '1' and clkdiv2' event) then
+--				if(vstart = 420 - vbp) then -- 420 = 480 - 60 (60 es  la altura de la barra)
+--					vstart <= "0000101000";
+--				else
+--					vstart <= vstart + 1;
+--				end if;
+--			end if;
+--		end process;
+		
+		
+		
+		--Movimiento de barra 1
+		process(clkdiv2)
+		begin
+			if(clkdiv2 = '1' and clkdiv2' event) then
+				
+				if(vstart1 = "0000101000") then
+					if(down1 = '1') then vstart1 <= vstart1 + 1;
+					end if;
+				elsif (vstart1 = (450 - vbp)) then
+					if(up1 = '1') then vstart1 <= vstart1 - 1;
+					end if;
 				else
-					-- Rayas horizontales
-					"11100000" when (conv (5 downto 0) = "000000" and vidon = '1' and a = "11" )else "00000000";
-	--***********************
+					if(up1 = '1') then vstart1 <= vstart1 - 1;
+					end if;
+					if(down1 = '1') then vstart1 <= vstart1 + 1;
+					end if;
+				end if;
+				
+			end if;
+		end process;
+		
+		--Movimiento de barra 2
+		process(clkdiv2)
+		begin
+			if(clkdiv2 = '1' and clkdiv2' event) then
+				
+				if(vstart2 = "0000101000") then
+					if(down2 = '1') then vstart2 <= vstart2 + 1;
+					end if;
+				elsif (vstart2 = (450 - vbp)) then
+					if(up2 = '1') then vstart2 <= vstart2 - 1;
+					end if;
+				else
+					if(up2 = '1') then vstart2 <= vstart2 - 1;
+					end if;
+					if(down2 = '1') then vstart2 <= vstart2 + 1 ;
+					end if;
+				end if;
+				
+			end if;
+		end process;
+		
+		--Movimiento de pelota
+		process(clkdiv3)
+		begin
+			if(clkdiv3 = '1' and clkdiv3' event) then
+				
+				if((pelotah + 10 + hbp) = (545 + hbp)) then
+					
+					if(((pelotav > vstart2) and (pelotav < vstart2 + 60))) then
+						sumv <= RandomNum (63 downto 62);
+						dirh <= '1';
+						dirv <= '1';
+					else		--GOL Derecho
+						go2 <= '0';
+						dirh <= '0';
+						sumv <= "00";
+						
+						marcador1 <= marcador1 + 1;
+						if(marcador1 = 7)then
+							marcador1 <= 0;
+							marcador2 <= 0;
+							winflag1 <= '1';
+						end if;
+					end if;
+				
+				elsif((pelotah + hbp) = (95 + hbp)) then
+					
+					if(((pelotav > vstart1) and (pelotav < vstart1 + 60))) then
+						sumv <= RandomNum (63 downto 62);
+						dirv <= RandomNum (61);
+						dirh <= '0';
+						dirv <= '0';
+					else		--GOL Izquierdo
+						go2 <= '0';
+						dirh <= '1';
+						sumv <= "00";
+						marcador2 <= marcador2 + 1;
+						
+						if(marcador2 = 7)then
+							marcador2 <= 0;
+							marcador1 <= 0;
+							winflag2 <= '1';
+						end if;
+						
+					end if;
+				
+				elsif((pelotav + vbp) <= (40 + vbp)) then --Rebote horizontal arriba
+						dirv <= '1';
+						
+				elsif((pelotav + vbp) >= (480 + vbp)) then --Rebote horizontal a
+						dirv <= '0';
+					
+				end if;	
+				
+--				if((pelotah = 630 + hbp) or (pelotah = 0 + hbp)) then
+--					pelotav <= "0011110000";
+--					pelotah <= "0111100000";
+--				end if;
+				
+				--Mueve dependiendo de la bandera de direccion
+				if(go='1' or go2='1') then
+					if(dirh = '0')then
+						pelotah <= pelotah + 1;
+					else
+						pelotah <= pelotah - 1;
+					
+					end if;
+					if (dirv = '1') then
+						pelotav <= pelotav + sumv;
+					else
+						pelotav <= pelotav - sumv;
+					end if;
+				else
+					pelotav <= "0011110000";
+					pelotah <= "0101000000";
+					espera <= espera + 1;
+					
+					if(marcador1 = 8) then
+						winflag1 <= '1';
+					elsif(marcador2 = 8) then
+						winflag2 <= '1';
+					end if;
+					
+					if (espera = 500) then go2 <= '1';
+													espera <= 0;
+													winflag1 <= '0';
+													winflag2 <= '0';
+					else
+						
+					end if;
+				end if;
+				
+				
+			end if;
+			
+		end process;
+		
+		
 
- --HabilitaciÛn de la seÒal de video solo en los m·rgenes de visualizaciÛn (480 x 640)
+	--*********
+		--Pixeles a visualizar				Posiciones horizontales								Posiciones verticales
+		RGB <=  "11100000" when (conh > (80 + hbp) and conh < (95 + hbp) and conv > (vstart1 + vbp) and conv < ((vstart1 + 60) + vbp) and vidon = '1') 
+			else "00000011" when(conh > (545 + hbp) and conh < (560 + hbp) and conv > (vstart2 + vbp) and conv < ((vstart2 + 60) + vbp) and vidon = '1') 
+			else "11111111" when(conh > (318 + hbp) and conh < (320 + hbp) and conv > ("0000101000" + vbp) and conv < (480 + vbp) and vidon = '1')
+			else "11111111" when(conh > (hbp) and conh < (600 + hbp) and conv > ("0000101000" + vbp) and conv < ("0000101010" + vbp) and vidon = '1')
+			else "11111111" when (conh > (pelotah + hbp) and conh < (pelotah + 10 + hbp) and conv > (pelotav + vbp) and conv < (pelotav + 10 + vbp) and vidon = '1') 
+			else "11111111" when(conh > (0 + 30 + hbp) and conh < ( 30 + 12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador1 > 0 and winflag1 = '0')
+			else "11111111" when(conh > (15 + 30 + hbp) and conh < (15 + 30 + 12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador1 > 1 and winflag1 = '0')
+			else "11111111" when(conh > (30 + 30 + hbp) and conh < (30 + 30 + 12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador1 > 2 and winflag1 = '0')
+			else "11111111" when(conh > (45 + 30 + hbp) and conh < (45 + 30 + 12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador1 > 3 and winflag1 = '0')
+			else "11111111" when(conh > (60 + 30 + hbp) and conh < (60 + 30 + 12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador1 > 4 and winflag1 = '0')
+			else "11111111" when(conh > (75 + 30 + hbp) and conh < (75 + 30 + 12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador1 > 5 and winflag1 = '0')
+			else "11111111" when(conh > (90 + 30 + hbp) and conh < (90 + 30 + 12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador1 > 6 and winflag1 = '0')
+			else "11111111" when(conh > (0 + 330 + hbp) and conh < (0 + 330 +12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador2 > 0 and winflag2 = '0')
+			else "11111111" when(conh > (15 + 330 + hbp) and conh < (15 + 330 +12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador2 > 1 and winflag2 = '0')
+			else "11111111" when(conh > (30 + 330 + hbp) and conh < (30 + 330 +12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador2 > 2 and winflag2 = '0')
+			else "11111111" when(conh > (45 + 330 + hbp) and conh < (45 + 330 +12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador2 > 3 and winflag2 = '0')
+			else "11111111" when(conh > (60 + 330 + hbp) and conh < (60 + 330 +12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador2 > 4 and winflag2 = '0')
+			else "11111111" when(conh > (75 + 330 + hbp) and conh < (75 + 330 +12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador2 > 5 and winflag2 = '0')
+			else "11111111" when(conh > (90 + 330 + hbp) and conh < (90 + 330 +12 + hbp) and conv > (15 + vbp) and conv < (21 + vbp) and vidon = '1' and marcador2 > 6 and winflag2 = '0')
+			else "11111100" when(conh > (200 + hbp) and conh < (250 + hbp) and conv > (200 + vbp) and conv < (250 + vbp) and vidon = '1' and winflag1 = '1')
+			else "11111100" when(conh > (420 + hbp) and conh < (470 + hbp) and conv > (200 + vbp) and conv < (250 + vbp) and vidon = '1' and winflag2 = '1')
+			
+			else "00000000";
+	--*********
+
+ --Habilitaci√≥n de la se√±al de video solo en los m√°rgenes de visualizaci√≥n (480 x 640)
  vidon <= '1' when (((conh < hbp and (conh < hfp )) or ((conv > vbp) and (conv < vfp)))) else '0';
+
+--Conectar modulos 
+RANDOM: CA2DPRNG port map (clk,'0', '1', RandomNum);
 end arq_video_vga;
